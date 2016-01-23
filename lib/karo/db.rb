@@ -11,7 +11,6 @@ module Karo
 	  desc "pull", "syncs MySQL database from server to localhost"
 	  def pull
 	    @configuration = Config.load_configuration(options)
-
       local_db_config  = load_local_db_config
       server_db_config = load_server_db_config
 
@@ -36,15 +35,13 @@ module Karo
     method_option :tty, aliases: "-t", desc: "force pseudo-tty allocation",
                   type: :boolean, default: true
     def console
-      configuration = Config.load_configuration(options)
+      @configuration = Config.load_configuration(options)
 
-      path = File.join(configuration["path"], "current")
-      ssh  = "ssh #{configuration["user"]}@#{configuration["host"]}"
-      ssh << " -t" if options[:tty]
+      path = File.join(@configuration["path"], server_config_path)
 
       command  = "cd #{path} && $SHELL --login -c \"bundle exec rails dbconsole -p\""
 
-      run_it "#{ssh} '#{command}'", options[:verbose]
+      run_it "#{ssh_command} #{"-t" if options[:tty]} '#{command}'", options[:verbose]
     end
 
     private
@@ -68,10 +65,9 @@ module Karo
     end
 
     def load_server_db_config
-      server_db_config_file = File.join(@configuration["path"], "shared/config/database.yml")
+      server_db_config_file = File.join(@configuration["path"], server_config_path, 'database.yml')
 
-      host = "#{@configuration["user"]}@#{@configuration["host"]}"
-      cmd  = "ssh #{host} 'cat #{server_db_config_file}'"
+			cmd = "#{ssh_command} 'cat #{server_db_config_file}'"
 
       server_db_config_output = `#{cmd}`
       yaml_without_any_ruby = ERB.new(server_db_config_output).result
@@ -87,9 +83,10 @@ module Karo
     end
 
     def drop_and_create_local_database(local_db_config)
+			local_db_host = local_db_config["host"] || "localhost"
       command = case local_db_config["adapter"]
       when "mysql2"
-        "mysql -v -h #{local_db_config["host"]} -u#{local_db_config["username"]} -p#{local_db_config["password"]} -e 'DROP DATABASE IF EXISTS `#{local_db_config["database"]}`; CREATE DATABASE IF NOT EXISTS `#{local_db_config["database"]}`;'"
+        "mysql -v -h #{local_db_host} -u #{local_db_config["username"]} -p#{local_db_config["password"]} -e 'DROP DATABASE IF EXISTS `#{local_db_config["database"]}`; CREATE DATABASE IF NOT EXISTS `#{local_db_config["database"]}`;'"
       when "postgresql"
         <<-EOS
           dropdb -h #{local_db_config["host"]} -U #{local_db_config["username"]} --if-exists #{local_db_config["database"]}
@@ -103,13 +100,14 @@ module Karo
     end
 
     def sync_server_to_local_database(server_db_config, local_db_config)
-      ssh = "ssh #{@configuration["user"]}@#{@configuration["host"]}"
+			server_db_host = server_db_config["host"] || "localhost"
+			local_db_host = local_db_config["host"] || "localhost"
 
       command = case server_db_config["adapter"]
       when /mysql|mysql2/
-        "#{ssh} \"mysqldump --opt -C -h #{server_db_config["host"]} -u#{server_db_config["username"]} -p#{server_db_config["password"]} -h#{server_db_config["host"]} #{server_db_config["database"]} | gzip -9 -c\" | gunzip -c | mysql -h #{local_db_config["host"]} -C -u#{local_db_config["username"]} -p#{local_db_config["password"]} #{local_db_config["database"]}"
+        "#{ssh_command} \"mysqldump --opt --compress --host=#{server_db_host} -u #{server_db_config["username"]} -p#{server_db_config["password"]} #{server_db_config["database"]} | gzip -9 -c\" | gunzip -c | mysql -h #{local_db_host} -C -u #{local_db_config["username"]} -p#{local_db_config["password"]} #{local_db_config["database"]}"
       when "postgresql"
-        "#{ssh} \"export PGPASSWORD='#{server_db_config["password"]}'; pg_dump -Fc -U #{server_db_config["username"]} -h #{server_db_config["host"]} #{server_db_config["database"]} | gzip -9 -c\" | gunzip -c | pg_restore -h #{local_db_config["host"]} -U #{local_db_config["username"]} -d #{local_db_config["database"]}"
+        "#{ssh_command} \"export PGPASSWORD='#{server_db_config["password"]}'; pg_dump -Fc -U #{server_db_config["username"]} -h #{server_db_config["host"]} #{server_db_config["database"]} | gzip -9 -c\" | gunzip -c | pg_restore -h #{local_db_config["host"]} -U #{local_db_config["username"]} -d #{local_db_config["database"]}"
       else
         raise Thor::Error, "Please make sure that the database adapter is either mysql2 or postgresql?"
       end

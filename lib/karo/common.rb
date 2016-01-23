@@ -7,6 +7,7 @@ module Karo
 
     include Thor::Actions
 
+
     def make_command(configuration, namespace, command, extras)
       commands = configuration["commands"]
 
@@ -47,6 +48,20 @@ module Karo
     def create_and_checkout_branch(name)
       create_branch name
       checkout_branch name
+    end
+
+    def ssh_command
+			host = "#{@configuration["user"]}@#{@configuration["host"]}"
+			port = @configuration["port"]
+
+			cmd  = "ssh "
+			cmd << "-p#{port} " unless port.empty?
+			cmd << "#{host}"
+			cmd
+		end
+
+    def server_config_path
+      @configuration["server_config_path"] || 'shared/config'
     end
 
   end

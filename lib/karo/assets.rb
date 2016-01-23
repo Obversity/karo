@@ -24,21 +24,25 @@ module Karo
 	  def pull
 	    configuration = Config.load_configuration(options)
 
+			port = configuration["port"]
+			if port
+				port_options = "-e 'ssh -p#{port}'"
+			end
+
       assets   = configuration["assets"]
       assets ||= {}
 
       path_local   = assets["local"]
-      path_local ||= "public/system/dragonfly/development"
+      path_local ||= "public/system"
       path_local   = File.expand_path(path_local)
 
       empty_directory path_local if !File.exists?(path_local) && !options[:dryrun]
 
       path_server   = assets["server"]
-      path_server ||= File.join(configuration["path"], "shared/system/dragonfly/#{options[:environment]}")
+      path_server ||= File.join(configuration["path"], "public/system/")
 
 	    host = "#{configuration["user"]}@#{configuration["host"]}"
-	    command  = "rsync -az --progress #{host}:#{path_server}/ #{path_local}/"
-
+	    command  = "rsync -az --progress #{port_options if port} #{host}:#{path_server}/ #{path_local}/"
       run_it command, options[:verbose]
 
       say "Assets sync complete", :green

@@ -15,6 +15,11 @@ module Karo
     # FIXME: Duplicated in Karo::Common but is needed for the generate method
     include Thor::Actions
 
+    def initialize(*args)
+      super
+      @configuration = Config.load_configuration(options)
+    end
+
     class_option :config_file, type: :string, default: Config.default_file_name,
                   aliases: "-c", desc: "name of the file containing server configuration"
     class_option :environment, aliases: "-e", desc: "server environment", default: "production"
@@ -35,9 +40,7 @@ module Karo
 
     desc "config", "displays server configuration stored in a config file"
     def config
-      configuration = Config.load_configuration(options)
-
-      puts JSON.pretty_generate(configuration) if configuration
+      puts JSON.pretty_generate(@configuration) if @configuration
     end
 
     def self.source_root
@@ -134,12 +137,10 @@ module Karo
     > 35308456  used memory
     LONGDESC
     def server(cmd, *extras)
-      configuration = Config.load_configuration(options)
-
-      ssh  = "ssh #{configuration["user"]}@#{configuration["host"]}"
+      ssh = ssh_command
       ssh << " -t" if options[:tty]
 
-      command = make_command configuration, "server", cmd, extras
+      command = make_command @configuration, "server", cmd, extras
       run_it "#{ssh} '#{command}'", options[:verbose]
     end
     map srv:    :server
@@ -152,9 +153,7 @@ module Karo
 
     desc "ssh", "open ssh console for a given server environment"
     def ssh
-      configuration = Config.load_configuration(options)
-
-      path = File.join(configuration["path"], "current")
+      path = File.join(@configuration["path"])
       cmd  = "cd #{path}; $SHELL --login"
 
       invoke :server, [cmd]
@@ -162,9 +161,7 @@ module Karo
 
     desc "console", "open rails console for a given server environment"
     def console
-      configuration = Config.load_configuration(options)
-
-      path = File.join(configuration["path"], "current")
+      path = File.join(@configuration["path"])
       cmd  = "cd #{path} && $SHELL --login -c \"bundle exec rails console\""
 
       invoke :server, [cmd]
@@ -172,9 +169,7 @@ module Karo
 
     desc "rake", "run rake commands for a rails app on a given server environment"
     def rake(command, *extras)
-      configuration = Config.load_configuration(options)
-
-      path = File.join(configuration["path"], "current")
+      path = File.join(@configuration["path"])
       cmd  = "cd #{path} && $SHELL --login -c \"bundle exec rake #{command}\""
 
       invoke :server, [cmd, extras]
@@ -182,9 +177,7 @@ module Karo
 
     desc "vim", "open a given file or folder on the server using VIM"
     def vim(command="", *extras)
-      configuration = Config.load_configuration(options)
-
-      path = File.join(configuration["path"], "current", command)
+      path = File.join(@configuration["path"], command)
       cmd  = "vim scp://#{configuration["user"]}@#{configuration["host"]}/#{path}"
 
       invoke :client, [cmd, extras]
@@ -193,9 +186,7 @@ module Karo
     desc "log", "displays server log for a given environment"
     class_option :continous, type: :boolean, lazy_default: true, aliases: "-f", desc: "The -f option causes tail to not stop when end of file is reached, but rather to wait for additional data to be appended to the input."
     def log(*extras)
-      configuration = Config.load_configuration(options)
-
-      path = File.join(configuration["path"], "shared/log/#{configuration["env"] || options["environment"]}.log")
+      path = File.join(@configuration["path"], "log/#{options["environment"]}.log")
 
       cmd = "tail"
       cmd << " -f" if options[:continous]
